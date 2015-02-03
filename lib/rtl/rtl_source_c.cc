@@ -529,6 +529,12 @@ std::vector<std::string> rtl_source_c::get_gain_names( size_t chan )
     if ( rtlsdr_get_tuner_type(_dev) == RTLSDR_TUNER_E4000 ) {
       names += "IF";
     }
+    if ( rtlsdr_get_tuner_type(_dev) == RTLSDR_TUNER_R820T ) {
+      names += "VGA";
+      names += "MIX";
+      names += "IF FILTER";
+    }
+
   }
 
   return names;
@@ -552,17 +558,78 @@ osmosdr::gain_range_t rtl_source_c::get_gain_range( size_t chan )
   return range;
 }
 
+
+osmosdr::gain_range_t rtl_source_c::get_gain_stage_range( size_t chan, int stage )
+{
+  osmosdr::gain_range_t range;
+
+  if (_dev) {
+    int* gains = new int[ 256 ];
+    char description[256];
+
+    int count = rtlsdr_get_tuner_stage_gains(_dev, stage, gains, description);
+    if (count > 0) {
+      int last = 0;
+      for (int i = 0; i < count; i++)
+      {
+        if (gains[i]>last)
+        {
+            fprintf(stderr,"%d - %d\n",i,gains[i]);
+            range += osmosdr::range_t( gains[i] / 10.0 );
+            last = gains[i];
+        }
+      }
+      delete[] gains;
+    }
+  }
+
+  return range;
+}
+
+
 osmosdr::gain_range_t rtl_source_c::get_gain_range( const std::string & name, size_t chan )
 {
   if ( "IF" == name ) {
     if ( _dev ) {
       if ( rtlsdr_get_tuner_type(_dev) == RTLSDR_TUNER_E4000 ) {
         return osmosdr::gain_range_t(3, 56, 1);
-      } else {
+      }
+       else {
         return osmosdr::gain_range_t();
       }
     }
   }
+
+  if ( "LNA" == name ) {
+    if ( _dev ) {
+      if ( rtlsdr_get_tuner_type(_dev) == RTLSDR_TUNER_R820T ) {
+        return rtl_source_c::get_gain_stage_range(chan,0);
+      }
+    }
+  }
+  if ( "MIX" == name ) {
+    if ( _dev ) {
+      if ( rtlsdr_get_tuner_type(_dev) == RTLSDR_TUNER_R820T ) {
+        return rtl_source_c::get_gain_stage_range(chan,1);
+      }
+    }
+  }
+  if ( "VGA" == name ) {
+    if ( _dev ) {
+      if ( rtlsdr_get_tuner_type(_dev) == RTLSDR_TUNER_R820T ) {
+        return rtl_source_c::get_gain_stage_range(chan,2);
+      }
+    }
+  }
+
+  if ( "IF FILTER" == name ) {
+    if ( _dev ) {
+      if ( rtlsdr_get_tuner_type(_dev) == RTLSDR_TUNER_R820T ) {
+        return rtl_source_c::get_bandwidths(chan);
+      }
+    }
+  }
+
 
   return get_gain_range( chan );
 }
@@ -585,6 +652,7 @@ bool rtl_source_c::get_gain_mode( size_t chan )
   return _auto_gain;
 }
 
+
 double rtl_source_c::set_gain( double gain, size_t chan )
 {
   osmosdr::gain_range_t rf_gains = rtl_source_c::get_gain_range( chan );
@@ -596,11 +664,53 @@ double rtl_source_c::set_gain( double gain, size_t chan )
   return get_gain( chan );
 }
 
+double rtl_source_c::set_stage_gain( double gain, int stage )
+{
+  osmosdr::gain_range_t rf_gains = rtl_source_c::get_gain_stage_range( 0,stage );
+
+  if ((_dev)&&(stage<3)) {
+    rtlsdr_set_tuner_stage_gain( _dev, stage, int(rf_gains.clip(gain) * 10.0) );
+  }
+
+  return gain;
+}
+
+
+
 double rtl_source_c::set_gain( double gain, const std::string & name, size_t chan)
 {
   if ( "IF" == name ) {
-    return set_if_gain( gain, chan );
+      if ( rtlsdr_get_tuner_type(_dev) == RTLSDR_TUNER_E4000 ) {
+        return set_if_gain( gain, chan );
+      }
+
   }
+
+
+  if ( "VGA" == name ) {
+      if ( rtlsdr_get_tuner_type(_dev) == RTLSDR_TUNER_R820T ) {
+        return set_stage_gain( gain, 2 );
+      }
+  }
+
+  if ( "MIX" == name ) {
+      if ( rtlsdr_get_tuner_type(_dev) == RTLSDR_TUNER_R820T ) {
+        return set_stage_gain( gain, 1 );
+      }
+  }
+
+  if ( "LNA" == name ) {
+      if ( rtlsdr_get_tuner_type(_dev) == RTLSDR_TUNER_R820T ) {
+        return set_stage_gain( gain, 0 );
+      }
+  }
+
+  if ( "IF FILTER" == name ) {
+      if ( rtlsdr_get_tuner_type(_dev) == RTLSDR_TUNER_R820T ) {
+        return set_bandwidth( gain );
+      }
+  }
+
 
   return set_gain( gain, chan );
 }
@@ -625,7 +735,7 @@ double rtl_source_c::get_gain( const std::string & name, size_t chan )
 double rtl_source_c::set_if_gain(double gain, size_t chan)
 {
   if ( _dev ) {
-    if ( rtlsdr_get_tuner_type(_dev) != RTLSDR_TUNER_E4000 ) {
+    if (( rtlsdr_get_tuner_type(_dev) != RTLSDR_TUNER_E4000 )) {
       _if_gain = 0;
       return _if_gain;
     }
@@ -705,3 +815,37 @@ std::string rtl_source_c::get_antenna( size_t chan )
 {
   return "RX";
 }
+
+
+osmosdr::gain_range_t rtl_source_c::get_bandwidths(size_t chan)
+{
+  osmosdr::gain_range_t range;
+  if ((_dev)&&( rtlsdr_get_tuner_type(_dev) == RTLSDR_TUNER_R820T ) )
+  {
+    int* gains = new int[ 256 ];
+
+    int count = rtlsdr_get_tuner_bandwidths(_dev, gains);
+    if (count > 0) {
+      for (int i = 0; i < count; i++)
+      {
+        fprintf(stderr,"bw %d - %d\n",i,gains[i]);
+        range += osmosdr::range_t( gains[i] );
+      }
+      delete[] gains;
+    }
+    return range;
+  }
+  return range;
+}
+
+
+double rtl_source_c::set_bandwidth(int value)
+{
+  if ((_dev)&&( rtlsdr_get_tuner_type(_dev) == RTLSDR_TUNER_R820T ) )
+  {
+    int val = rtlsdr_set_tuner_bandwidth(_dev, value);
+    return val;
+  }
+  return 0;
+}
+
