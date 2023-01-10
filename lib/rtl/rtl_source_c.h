@@ -113,6 +113,11 @@ public:
   std::string set_antenna( const std::string & antenna, size_t chan = 0 );
   std::string get_antenna( size_t chan = 0 );
 
+  osmosdr::gain_range_t get_gain_stage_range( size_t chan, int stage );
+  osmosdr::gain_range_t get_bandwidths(size_t);
+  double set_stage_gain( double gain, int stage = 0 );
+  double set_bandwidth(int value);
+
 protected:
   bool start();
   bool stop();
